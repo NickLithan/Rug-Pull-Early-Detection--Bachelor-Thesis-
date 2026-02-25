@@ -3,7 +3,8 @@ import numpy as np
 from pathlib import Path
 from datetime import timedelta
 from tqdm.auto import tqdm
-from feature_set import DeltasFeatureSet
+from typing import Type, Optional
+from feature_set import DeltasFeatureSet, FeaturesConstructor, STATIC_FEATURES
 
 
 def decode_token_id(path: str|Path, start_ts: str, end_ts: str) -> pd.DataFrame:
@@ -22,9 +23,10 @@ def decode_token_id(path: str|Path, start_ts: str, end_ts: str) -> pd.DataFrame:
     return joined
 
 
-# appends sequential tables (with no skips of tokens/timestamps in between)
 def recombine_tables(init_tables_with_start_and_end_ts: list[tuple[str, str, str]],
-                     start_ts: str, end_ts: str, output_path: str):
+                     start_ts: str, end_ts: str):
+    """Appends sequential tables (with no skips of tokens/timestamps in between)."""
+
     decoded_tables = []
     for source_path, source_start_ts, source_end_ts in init_tables_with_start_and_end_ts:
         table = decode_token_id(source_path, source_start_ts, source_end_ts)
@@ -91,6 +93,7 @@ def process_events(event_seq: np.ndarray, t_rel_s: np.ndarray,
 
     return {
         "timedeltas": timedeltas.copy(),
+        "t_rel_s": timedeltas.dt.total_seconds().astype(int).copy(),
         "delta_base_vault": base_delta_series.copy(),
         "delta_quote_vault": quote_delta_series.copy(),
         "base_liquidity": base_liquidity_series.copy(),
@@ -106,12 +109,15 @@ def process_events(event_seq: np.ndarray, t_rel_s: np.ndarray,
     }
 
 
-def make_deltas_features_table():
-    directory = Path("data/taq_5min")
-    output_path = Path("data_collection/data/temp/microstructure_features_5min.csv")
+def make_features_table(feature_constructors: list[Type[FeaturesConstructor]],
+                        out_csv: str, progress_desc: Optional[str] = None):
+    """Calculates features from encoded event tables."""
+
+    directory = Path("data/vault_deltas_5min")
+    output_path = Path(f"data/features/{out_csv}")
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    feature_set = DeltasFeatureSet()
+    feature_set = DeltasFeatureSet(feature_constructors)
     all_rows = []
     skipped = 0
 
@@ -122,7 +128,8 @@ def make_deltas_features_table():
         if f.suffix == ".csv"
     )
 
-    for day_file in tqdm(day_files, desc="Days"):
+    desc_str = "Days" if not progress_desc else f"[{progress_desc}] Days"
+    for day_file in tqdm(day_files, desc=desc_str):
         date_str = day_file.stem
         start_ts = f"{date_str} 00:00:00"
         end_ts = (pd.Timestamp(date_str) + timedelta(days=1)).strftime("%Y-%m-%d %H:%M:%S")
@@ -141,7 +148,6 @@ def make_deltas_features_table():
             try:
                 event_seq, t_rel_s, db, dq = decode_packed_events(str(packed), decimals)
                 series = process_events(event_seq, t_rel_s, db, dq)
-                n_trades = series["is_trade"].sum()
                 features = feature_set.calculate(series)
             except Exception as e:
                 print(f"  WARN {token_mint}: {e}")
@@ -149,18 +155,14 @@ def make_deltas_features_table():
                 continue
 
             features["token_mint"] = token_mint
-            features["date"] = date_str
-            features["n_trades"] = int(n_trades)
+            for static_feature in STATIC_FEATURES:
+                features[static_feature] = row.get(static_feature)
             all_rows.append(features)
 
     result = pd.DataFrame(all_rows)
-    meta_cols = ["token_mint", "date", "n_trades"]
+    meta_cols = ["token_mint"] + STATIC_FEATURES
     feat_cols = [c for c in result.columns if c not in meta_cols]
     result = result[meta_cols + feat_cols]
     result.to_csv(output_path, index=False)
 
     print(f"Done: {len(result)} tokens with features, {skipped} skipped -> {output_path}")
-
-
-if __name__ == '__main__':
-    make_deltas_features_table()

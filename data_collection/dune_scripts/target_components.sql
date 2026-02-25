@@ -1,5 +1,7 @@
 WITH params AS (
     SELECT
+        -- for better performance, query by day, or with even shorter windows
+        -- (transfers table is enormous, especially at peak activity periods)
         TIMESTAMP '2024-10-01 00:00:00 UTC' AS start_ts,
         TIMESTAMP '2024-10-02 00:00:00 UTC' AS end_ts,
         CAST('So11111111111111111111111111111111111111112' AS VARCHAR) AS wsol,
@@ -15,7 +17,7 @@ token_universe_slice AS (
         quote_vault,
         CAST(first_trade_time AS TIMESTAMP) AS first_trade_time
     -- uploaded dataset with tokens for which features can be calculated
-    FROM dune.niiiik.dataset_pools_subset, params
+    FROM dune..., params
     WHERE CAST(first_trade_time AS TIMESTAMP) >= start_ts
         and CAST(first_trade_time AS TIMESTAMP) < end_ts
 ),
@@ -67,7 +69,11 @@ tx_agg AS (
         arbitrary(first_trade_time) AS first_trade_time,
         MIN(block_slot) AS block_slot,
         MIN(block_time) AS block_time,
+
         MIN(COALESCE(tx_index, 0)) AS min_tx_index,
+        MIN(COALESCE(outer_instruction_index, 0)) AS min_outer_instruction_index,
+        MIN(COALESCE(inner_instruction_index, 0)) AS min_inner_instruction_index,
+
         SUM(CASE WHEN vault_role = 'base_vault' THEN signed_amount_raw ELSE 0 END) AS delta_base_vault_raw,
         SUM(CASE WHEN vault_role = 'quote_vault' THEN signed_amount_raw ELSE 0 END) AS delta_quote_vault_raw
     FROM vault_transfers
@@ -77,7 +83,13 @@ tx_agg AS (
 ordered AS (
     SELECT
         token_mint, delta_base_vault_raw, delta_quote_vault_raw,
-        ROW_NUMBER() OVER (PARTITION BY token_mint ORDER BY block_slot, min_tx_index, tx_id) AS seq,
+        row_number() OVER (
+            PARTITION BY token_mint
+            -- Solana transactions order 
+            ORDER BY block_slot, min_tx_index, min_outer_instruction_index, min_inner_instruction_index, tx_id
+        ) AS seq,
+
+        -- simplified timestamp: seconds since first trade
         CAST(to_unixtime(block_time) - to_unixtime(first_trade_time) AS INTEGER) AS t_rel_s
     FROM tx_agg
 ),
@@ -117,8 +129,13 @@ SELECT
     arbitrary(max_tvl) as max_tvl, arbitrary(last_tvl) as last_tvl, arbitrary(max_tvl_idx) as max_tvl_idx,
     MIN(midquote) as min_price,
     MIN(quote_liquidity_raw) as min_tvl,
+
+    -- aggregate on data stricly after the peak (NULL if peak was at the end of 1 hour)
     MIN(CASE WHEN seq > max_price_idx THEN midquote ELSE NULL END) as posterior_min_price,
     MIN(CASE WHEN seq > max_tvl_idx THEN quote_liquidity_raw ELSE NULL END) as posterior_min_tvl,
+
+    -- inactivity either between transfers, or from last transfer to end of 1 hour
     GREATEST(MAX(COALESCE(t_rel_s - prev_t_rel_s, 0)), 60 * 60 - MAX(t_rel_s)) as longest_inactivity
 FROM peaks_and_ends
 GROUP BY token_mint
+-- no activity filter – already built into our uploaded dataset

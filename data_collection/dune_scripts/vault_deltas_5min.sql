@@ -17,7 +17,8 @@ token_universe_slice AS (
         token_vault,
         quote_vault,
         CAST(first_trade_time AS TIMESTAMP) AS first_trade_time
-    FROM dune.niiiik.dataset_temp, params -- uploaded dataset with enriched pools
+    -- uploaded dataset with enriched pools
+    FROM dune..., params
     WHERE 
         CAST(first_trade_time AS TIMESTAMP) >= start_ts
         and CAST(first_trade_time AS TIMESTAMP) < end_ts
@@ -84,7 +85,7 @@ tx_agg AS (
         MIN(block_slot) AS block_slot,
         MIN(block_time) AS block_time,
 
-        MIN(COALESCE(tx_index, 0)) AS min_tx_index, -- ??????????????
+        MIN(COALESCE(tx_index, 0)) AS min_tx_index,
         MIN(COALESCE(outer_instruction_index, 0)) AS min_outer_instruction_index,
         MIN(COALESCE(inner_instruction_index, 0)) AS min_inner_instruction_index,
 
@@ -96,8 +97,7 @@ tx_agg AS (
 
 ordered AS (
     SELECT
-        token_id,
-
+        token_id, delta_base_vault_raw, delta_quote_vault_raw,
         row_number() OVER (
             PARTITION BY token_id
             -- Solana transactions order 
@@ -105,10 +105,7 @@ ordered AS (
         ) AS event_seq,
 
         -- simplified timestamp: seconds since first trade
-        CAST(to_unixtime(block_time) - to_unixtime(first_trade_time) AS BIGINT) AS t_rel_s,
-
-        delta_base_vault_raw,
-        delta_quote_vault_raw
+        CAST(to_unixtime(block_time) - to_unixtime(first_trade_time) AS BIGINT) AS t_rel_s
     FROM tx_agg
 )
 
