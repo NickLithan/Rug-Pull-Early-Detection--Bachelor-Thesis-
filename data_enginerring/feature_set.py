@@ -90,7 +90,7 @@ class PriceFeatures(FeaturesConstructor):
 
         return {
             "init_price": init_price,
-            "max_price": midquote.max(),
+            "max_price": midquote.max() if np.isfinite(midquote.max()) else np.nan,
             "min_price": midquote.min(),
             "std_price": midquote.std(),
             "std_buy_price": eff_price[is_trade & (trade_sign > 0)].std(),
@@ -315,7 +315,7 @@ class AmihudIlliquidity(FeaturesConstructor):
             return {"amihud_illiquidity": np.nan}
 
         absolute_return = np.abs((midquote - prev_midquote) / prev_midquote)
-        return {"amihud_illiquidity": np.mean(absolute_return * scale / sol_volume)}
+        return {"amihud_illiquidity": np.mean(absolute_return * scale / sol_volume if np.all(np.isfinite(absolute_return)) else np.nan)}
 
 
 class VPIN(FeaturesConstructor):

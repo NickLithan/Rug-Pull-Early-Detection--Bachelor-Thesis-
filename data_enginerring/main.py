@@ -43,7 +43,7 @@ def main():
         targets = pd.read_csv(f"data/{targets_table_str}")
         joined = features_expanded.set_index("token_mint").join(targets.set_index("token_mint"), how="inner")
         joined.to_csv(str(path_dataset_expanded))
-        print(f"Constructed benchmark dataset: {str(path_dataset_expanded)}")
+        print(f"Constructed expanded dataset: {str(path_dataset_expanded)}")
 
 
 if __name__ == '__main__':
