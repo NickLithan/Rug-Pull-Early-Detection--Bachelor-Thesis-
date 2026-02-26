@@ -6,13 +6,11 @@ from typing import Type
 class FeaturesConstructor(ABC):
     @classmethod
     @abstractmethod
-    def get_features_list(cls) -> list[str]:
-        pass
+    def get_features_list(cls) -> list[str]: pass
 
     @classmethod
     @abstractmethod
-    def calculate(cls, series_dict: dict) -> dict:
-        pass
+    def calculate(cls, series_dict: dict) -> dict: pass
 
 
 class DeltasFeatureSet:
@@ -22,7 +20,7 @@ class DeltasFeatureSet:
             fc.get_features_list() for fc in self.feature_constructors
         ]).tolist()
 
-    def calculate(self, series_dict):
+    def calculate(self, series_dict: dict):
         out = {}
         for fc in self.feature_constructors:
             try:
