@@ -33,7 +33,7 @@ def cb_train_default(X_train: pd.DataFrame, X_test: pd.DataFrame, y_train: pd.Se
 
 
 def make_standard_objective(X_train: pd.DataFrame, y_train: pd.Series, seed: int, n_splits: int=5):
-    """Makes an Optuna objective function: walk-forward cross-validation ROC AUC."""
+    """Makes an Optuna objective function: walk-forward cross-validation ROC AUC for catboost."""
 
     optuna.logging.set_verbosity(optuna.logging.WARNING)
 
@@ -82,7 +82,7 @@ def make_standard_objective(X_train: pd.DataFrame, y_train: pd.Series, seed: int
 
 def cb_tune_and_train_standard(X_train: pd.DataFrame, X_test: pd.DataFrame, y_train: pd.Series,
                             output_file: str, seed: int, n_trials: int=25, force_retrain: bool=False, save: bool = True):
-    """Tune hyperparameters with retraining."""
+    """Tune catboost hyperparameters with Optuna + walk-forward CV, then retrain on full training set."""
 
     optuna.logging.set_verbosity(optuna.logging.WARNING)
 
