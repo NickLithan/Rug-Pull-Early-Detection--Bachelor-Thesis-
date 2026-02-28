@@ -47,7 +47,7 @@ def make_rf_objective(X_train: pd.DataFrame, y_train: pd.Series, seed: int, n_sp
             "criterion":         trial.suggest_categorical("criterion", ["gini", "entropy", "log_loss"]),
             "class_weight":      "balanced",
             "random_state":      seed,
-            "n_jobs":            -1,
+            "n_jobs":            3,
         }
 
         scores = []
@@ -100,7 +100,7 @@ def rf_tune_and_train_standard(X_train: pd.DataFrame, X_test: pd.DataFrame, y_tr
     best_params = study.best_params
     best_params["class_weight"] = "balanced"
     best_params["random_state"] = seed
-    best_params["n_jobs"] = -1
+    best_params["n_jobs"] = 3
 
     model = RandomForestClassifier(**best_params)
     model.fit(X_train, y_train)

@@ -397,7 +397,7 @@ MICROSTRUCTURE_FEATURES = [
 # static (categorical) features
 STATIC_FEATURES = [
     "pool_type",
-    "has_pumpdotfun_history",
+    # "has_pumpdotfun_history", # SURVIVORSHIP BIAS!!
     "token_decimals",
     # "token_program",
 ]
