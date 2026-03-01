@@ -38,16 +38,16 @@ def make_rf_objective(X_train: pd.DataFrame, y_train: pd.Series, seed: int, n_sp
 
     def objective(trial):
         params = {
-            "n_estimators":      trial.suggest_int("n_estimators", 100, 2000),
-            "max_depth":         trial.suggest_int("max_depth", 3, 30),
+            "n_estimators": trial.suggest_int("n_estimators", 100, 2000),
+            "max_depth": trial.suggest_int("max_depth", 3, 30),
             "min_samples_split": trial.suggest_int("min_samples_split", 2, 50),
-            "min_samples_leaf":  trial.suggest_int("min_samples_leaf", 1, 50),
-            "max_features":      trial.suggest_categorical("max_features", ["sqrt", "log2", None]),
-            "max_samples":       trial.suggest_float("max_samples", 0.5, 1.0),
-            "criterion":         trial.suggest_categorical("criterion", ["gini", "entropy", "log_loss"]),
-            "class_weight":      "balanced",
-            "random_state":      seed,
-            "n_jobs":            3,
+            "min_samples_leaf": trial.suggest_int("min_samples_leaf", 1, 50),
+            "max_features": trial.suggest_categorical("max_features", ["sqrt", "log2", None]),
+            "max_samples": trial.suggest_float("max_samples", 0.5, 1.0),
+            "criterion": trial.suggest_categorical("criterion", ["gini", "entropy", "log_loss"]),
+            "class_weight": "balanced",
+            "random_state": seed,
+            "n_jobs": 3,
         }
 
         scores = []
