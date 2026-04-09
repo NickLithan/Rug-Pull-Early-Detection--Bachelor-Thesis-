@@ -14,10 +14,9 @@ With 32,594 token launches analyzed, I conducted an A/B test on model performanc
 
 ## Repository Structure
 
-
     BT
     ├── data                    # data collected from outside sources + the final dataset
-    ├── data_collection         # SQL and Python used for data collection
+    ├── data_collection         # SQL and Python scripts for data collection
     ├── data_engineering        # raw data processing and feature/target calculations
     ├── model_storage           # saves of trained models, split by configuration type
     ├── utils                   # utility funcions, used in the main pipeline
