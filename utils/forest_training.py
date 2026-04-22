@@ -38,16 +38,16 @@ def make_rf_objective(X_train: pd.DataFrame, y_train: pd.Series, seed: int, n_sp
 
     def objective(trial):
         params = {
-            "n_estimators": trial.suggest_int("n_estimators", 100, 2000),
-            "max_depth": trial.suggest_int("max_depth", 3, 30),
-            "min_samples_split": trial.suggest_int("min_samples_split", 2, 50),
+            "n_estimators": trial.suggest_int("n_estimators", 300, 1000),
+            "max_depth": trial.suggest_int("max_depth", 10, 18),
+            "min_samples_split": trial.suggest_int("min_samples_split", 2, 100),
             "min_samples_leaf": trial.suggest_int("min_samples_leaf", 1, 50),
-            "max_features": trial.suggest_categorical("max_features", ["sqrt", "log2", None]),
-            "max_samples": trial.suggest_float("max_samples", 0.5, 1.0),
-            "criterion": trial.suggest_categorical("criterion", ["gini", "entropy", "log_loss"]),
-            "class_weight": "balanced",
+            "max_features": trial.suggest_float("max_features", 0.5, 1.0),
+            # "max_samples": trial.suggest_float("max_samples", 0.5, 1.0),
+            # "criterion": "log_loss",
+            # "class_weight": "balanced",
             "random_state": seed,
-            "n_jobs": 3,
+            "n_jobs": 4,
         }
 
         scores = []
@@ -72,7 +72,7 @@ def make_rf_objective(X_train: pd.DataFrame, y_train: pd.Series, seed: int, n_sp
 
 
 def rf_tune_and_train_standard(X_train: pd.DataFrame, X_test: pd.DataFrame, y_train: pd.Series,
-                               output_file: str, seed: int, n_trials: int = 25,
+                               output_file: str, seed: int, n_trials: int = 40,
                                force_retrain: bool = False, save: bool = True):
     """Tune RF hyperparameters with Optuna + walk-forward CV, then retrain on full training set."""
 
@@ -89,7 +89,8 @@ def rf_tune_and_train_standard(X_train: pd.DataFrame, X_test: pd.DataFrame, y_tr
     study = optuna.create_study(
         direction="maximize",
         sampler=optuna.samplers.TPESampler(seed=seed),
-        pruner=optuna.pruners.MedianPruner(n_warmup_steps=2),
+        # pruner=optuna.pruners.MedianPruner(n_warmup_steps=2),
+        pruner=optuna.pruners.NopPruner(),
     )
     study.optimize(objective, n_trials=n_trials, show_progress_bar=True)
 
@@ -98,9 +99,9 @@ def rf_tune_and_train_standard(X_train: pd.DataFrame, X_test: pd.DataFrame, y_tr
 
     # retrain on full training data
     best_params = study.best_params
-    best_params["class_weight"] = "balanced"
+    # best_params["class_weight"] = "balanced"
     best_params["random_state"] = seed
-    best_params["n_jobs"] = 3
+    best_params["n_jobs"] = 4
 
     model = RandomForestClassifier(**best_params)
     model.fit(X_train, y_train)
