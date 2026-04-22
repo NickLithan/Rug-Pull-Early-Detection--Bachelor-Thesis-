@@ -2,6 +2,8 @@ from abc import ABC, abstractmethod
 import numpy as np
 from typing import Type
 
+from .feature_utils import series2time_bar_ohlc
+
 
 class FeaturesConstructor(ABC):
     @classmethod
@@ -189,16 +191,8 @@ class RSIFeatures(FeaturesConstructor):
         # 1. making time bars:
         time_bar_delta = 10
         assert 300 % time_bar_delta == 0, "Time bars must evenly split the 5-minute window."
+        close_arr = series2time_bar_ohlc(t_rel_s, midquote, bar_t=time_bar_delta)["close"]
 
-        # binary search
-        close_times = np.arange(0, 300 + time_bar_delta, time_bar_delta)
-        order = np.argsort(t_rel_s.values)
-        timedeltas_arr = t_rel_s.values[order]
-        midquote_arr = midquote.values[order]
-        close_idx = np.searchsorted(timedeltas_arr, close_times, side='right') - 1
-        assert np.all(close_idx >= 0), "Binary search of time bar timestamps failed."
-        close_arr = midquote_arr[close_idx]
-        
         # undefined values
         if not np.any(close_arr > 0):
             out = {}
@@ -244,35 +238,40 @@ class RSIFeatures(FeaturesConstructor):
 ############################################################
 
 class KyleLambda(FeaturesConstructor):
-    """Kyle's (1985) lambda, following Lopez de Prado (2018)."""
+    """Kyle's (1985) lambda, normalized according to Kyle and Obizhaeva (2016)."""
 
     @classmethod
-    def get_features_list(cls) -> list[str]: return ['kyle_lambda']
+    def get_features_list(cls) -> list[str]: return ['kyle_lambda_norm']
 
     @classmethod
-    def calculate(cls, series_dict: dict, scale: float=1e12) -> dict:
+    def calculate(cls, series_dict: dict) -> dict:
         is_trade = series_dict["is_trade"]
         midquote = series_dict["midquote"][is_trade].iloc[1:]
         prev_midquote = series_dict["midquote"].shift(1)[is_trade].iloc[1:]
         # bought = -(increase in vault):
         signed_volume = -series_dict["delta_base_vault"][is_trade].iloc[1:]
 
-        # scale is used in case lambdas are too tiny
-        delta_midquote_scaled = (midquote - prev_midquote) * scale
-        covar = np.cov(delta_midquote_scaled, signed_volume, ddof=1)[0,1]
+        delta_midquote = midquote - prev_midquote
+        covar = np.cov(delta_midquote, signed_volume, ddof=1)[0,1]
 
         var_volume = np.var(signed_volume, ddof=1)
         if np.isclose(var_volume, 0):
-            return {"kyle_lambda": np.nan}
+            return {"kyle_lambda_norm": np.nan}
+        
+        kyle_lambda = covar / var_volume
+        kyle_lambda_norm = kyle_lambda * np.mean(np.abs(signed_volume) / prev_midquote)
 
-        return {"kyle_lambda": covar / var_volume}
+        return {"kyle_lambda_norm": kyle_lambda_norm}
 
 
 class RollSpread(FeaturesConstructor):
     """Harris (1990) version of Roll's (1984) Spread Estimator."""
 
     @classmethod
-    def get_features_list(cls) -> list[str]: return ['roll_spread', 'roll_percentage_spread']
+    def get_features_list(cls) -> list[str]: return [
+        'roll_spread',
+        'roll_percentage_spread'
+    ]
 
     @classmethod
     def calculate(cls, series_dict: dict, scale: float=1e10) -> dict:
@@ -285,7 +284,10 @@ class RollSpread(FeaturesConstructor):
         r_spread = 2 * np.sqrt(-scov) if scov < 0 else -2 * np.sqrt(scov)
 
         if np.any(np.isclose(prev_midquote, 0)):
-            return { "roll_spread": r_spread * scale, "roll_percentage_spread": np.nan}
+            return {
+                "roll_spread": r_spread * scale,
+                "roll_percentage_spread": np.nan
+            }
 
         # percentage spread estimate; normalized via scaling up by 100
         returns = delta_midquote_scaled / prev_midquote
@@ -315,7 +317,9 @@ class AmihudIlliquidity(FeaturesConstructor):
             return {"amihud_illiquidity": np.nan}
 
         absolute_return = np.abs((midquote - prev_midquote) / prev_midquote)
-        return {"amihud_illiquidity": np.mean(absolute_return * scale / sol_volume if np.all(np.isfinite(absolute_return)) else np.nan)}
+        return {"amihud_illiquidity": np.mean(
+            absolute_return * scale / sol_volume if np.all(np.isfinite(absolute_return)) else np.nan
+        )}
 
 
 class VPIN(FeaturesConstructor):
@@ -337,9 +341,9 @@ class VPIN(FeaturesConstructor):
         # order imbalance accumulation within volume bars
         # (trades are split between bins in case of overflow)
         v_left = vol_per_bar
-        n_buckets = 0
-        mean_absolute_order_imbalance = 0.0
+        order_imbalances = []
         current_order_imbalance = 0.0
+        n_buckets = 0
 
         for signed_v in signed_volume_arr:
             v, sign = abs(signed_v), np.sign(signed_v)
@@ -353,21 +357,94 @@ class VPIN(FeaturesConstructor):
                 v -= v_left
                 full_buckets, residual = int(v // vol_per_bar), v % vol_per_bar
 
-                # update via running mean
-                mean_absolute_order_imbalance *= n_buckets / (n_buckets + 1 + full_buckets)
+                # update
+                order_imbalances.append(abs(current_order_imbalance))
+                full_buckets_ofi = [full_buckets * vol_per_bar]
+                order_imbalances = order_imbalances + full_buckets_ofi
                 n_buckets += 1 + full_buckets
-                mean_absolute_order_imbalance += abs(current_order_imbalance) / n_buckets 
-                mean_absolute_order_imbalance += full_buckets / n_buckets * vol_per_bar
 
                 # left over
                 current_order_imbalance = sign * residual
                 v_left = vol_per_bar - residual
 
-        if n_buckets < 5:   # reasonable lower limit
+        if n_buckets < 5:   # reasonable lower limit on bin count
             return {"vpin": np.nan}
 
-        vpin = mean_absolute_order_imbalance / vol_per_bar
+        vpin = np.sum(order_imbalances) / (n_buckets * vol_per_bar)
         return {"vpin": vpin}
+
+
+class OrderFlowImbalance(FeaturesConstructor):
+    "OFI, based on Cont, Kukanov and Stoikov (2014)."
+
+    @classmethod
+    def get_features_list(cls) -> list[str]: return ['ofi']
+
+    @classmethod
+    def calculate(cls, series_dict: dict) -> dict:
+        is_trade = series_dict["is_trade"]
+        signed_volume = -series_dict["delta_base_vault"][is_trade]
+        ofi = np.sum(signed_volume)
+        return {"ofi": ofi}
+
+
+class EffectiveSpreadFeatures(FeaturesConstructor):
+    "Statistics of effective percentage spread from Goyenko, Holden and Trzcinka (2009)."
+
+    @classmethod
+    def get_features_list(cls) -> list[str]: return [
+        'median_effective_spread',
+        # 'std_effective_spread',
+    ]
+
+    @classmethod
+    def calculate(cls, series_dict: dict) -> dict:
+        is_trade = series_dict["is_trade"]
+        eff_price = series_dict["eff_price"][is_trade].iloc[1:]
+        prev_midquote = series_dict["midquote"].shift(1)[is_trade].iloc[1:]
+        
+        eff_spread = 2 * np.abs(np.log(eff_price) - np.log(prev_midquote))
+        return {
+            "median_effective_spread": np.median(eff_spread),
+            # "std_effective_spread": np.std(eff_spread, ddof=1),
+        }
+
+
+class CorwinSchultzSpread(FeaturesConstructor):
+    "Corwin and Schultz (2012) spread estimate, following Lopez de Prado (2018)."
+
+    @classmethod
+    def get_features_list(cls) -> list[str]: return ['corwin_schultz_spread']
+
+    @classmethod
+    def calculate(cls, series_dict: dict, bar_t: float=30, window: float=300) -> dict:
+        assert 2 * bar_t <= window, "Not enough time bars for Corwin Schults spread estimation."
+
+        t_rel_s = series_dict["t_rel_s"]
+        midquote = series_dict["midquote"]
+
+        ohlc = series2time_bar_ohlc(t_rel_s, midquote, bar_t, window)
+        high, low = ohlc["high"], ohlc["low"]
+
+        # high vs low -> window(2) sum -> beta
+        HL = np.log(high / low) ** 2
+        HL_coupled = HL[1:] + HL[:-1]
+        beta = np.mean(HL_coupled)
+
+        # high and low over last 2 bars -> gamma
+        H_window_max = np.maximum(high[-1], high[-2])
+        L_window_max = np.minimum(low[-1], low[-2])
+        gamma = np.log(H_window_max / L_window_max) ** 2
+
+        # alpha = lin_comb{sqrt(beta), sqrt(gamma)}
+        denom, beta_coef = (3 - 2 * np.sqrt(2)), (np.sqrt(2) - 1)
+        alpha = (beta_coef * np.sqrt(beta) - np.sqrt(gamma / denom)) / denom
+
+        # spread estimate
+        exp_alpha = np.exp(alpha)
+        spread = 2 * (exp_alpha - 1) / (exp_alpha + 1)
+
+        return {'corwin_schultz_spread': spread}
 
 
 ############################################################
@@ -391,13 +468,21 @@ MICROSTRUCTURE_FEATURES = [
     RollSpread,
     AmihudIlliquidity,
     VPIN,
+    OrderFlowImbalance,
+    EffectiveSpreadFeatures,
+    CorwinSchultzSpread,
 ]
+
+
+# # rolling quantiles of microstructure features
+# MICROSTRUCTURE_Q_FEATURES = [
+#     feature + "_rolling_q"
+#     for feature in DeltasFeatureSet(MICROSTRUCTURE_FEATURES).features_list
+# ]
 
 
 # static (categorical) features
 STATIC_FEATURES = [
     "pool_type",
-    # "has_pumpdotfun_history", # SURVIVORSHIP BIAS!!
     "token_decimals",
-    # "token_program",
 ]

@@ -1,10 +1,12 @@
 import pandas as pd
+import polars as pl
 import numpy as np
 from pathlib import Path
 from datetime import timedelta
 from tqdm.auto import tqdm
 from typing import Type, Optional
-from feature_set import DeltasFeatureSet, FeaturesConstructor, STATIC_FEATURES
+
+from .feature_set import DeltasFeatureSet, FeaturesConstructor, STATIC_FEATURES
 
 
 def decode_token_id(path: str|Path, start_ts: str, end_ts: str) -> pd.DataFrame:
@@ -84,8 +86,13 @@ def process_events(event_seq: np.ndarray, t_rel_s: np.ndarray,
     is_lp_addition_like = (base_delta_series > 0) & (quote_delta_series > 0)
     is_lp_removal_like = (base_delta_series < 0) & (quote_delta_series < 0)
 
+    # removes 100+ broken observations
+    assert is_lp_addition_like.iloc[0], "The first transaction must be vaults liquidity formation."
+
     base_liquidity_series = base_delta_series.cumsum()
     quote_liquidity_series = quote_delta_series.cumsum()
+
+    assert (base_liquidity_series >= 0).all() and (quote_liquidity_series >= 0).all(), "The first transaction was omitted."
 
     midquote_series = quote_liquidity_series / base_liquidity_series
     effective_price = (-quote_delta_series / base_delta_series).where(is_trade)
@@ -168,3 +175,28 @@ def make_features_table(feature_constructors: list[Type[FeaturesConstructor]],
     result.to_csv(output_path, index=False)
 
     print(f"Done: {len(result)} tokens with features, {skipped} skipped -> {output_path}")
+
+
+def make_rolling_quantiles_features(feature_constructors: list[Type[FeaturesConstructor]],
+                                    input_path: str, out_path: str, window_size: str = "2d",
+                                    by: str = "first_trade_time",
+                                    first_ts: str = "2024-10-01 00:00:00 UTC"):
+    features_list = DeltasFeatureSet(feature_constructors).features_list
+    df = pl.read_csv(input_path, try_parse_dates=True).sort(by)
+
+    cutoff_ts = pl.lit(
+        pl.Series([first_ts])
+        .str.to_datetime("%Y-%m-%d %H:%M:%S %Z")
+        .dt.offset_by(window_size)
+        .item(),
+        dtype=pl.Datetime('us', 'UTC')
+    )
+
+    f_rank = lambda x: pl.col(x).rolling_rank_by(by, window_size)
+    f_num = lambda x: pl.col(x).is_not_null().cast(pl.Int32).rolling_sum_by(by, window_size)
+    f_quantile = lambda x: (f_rank(x) - 1) / (f_num(x) - 1)
+
+    percentile_exprs = [f_quantile(feature).name.suffix("_rolling_q") for feature in features_list]
+    (df.with_columns(percentile_exprs)
+        .filter(pl.col(by) >= cutoff_ts)
+        .write_csv(out_path))

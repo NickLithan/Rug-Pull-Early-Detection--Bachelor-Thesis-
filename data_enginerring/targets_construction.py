@@ -2,7 +2,8 @@ import pandas as pd
 from pathlib import Path
 from tqdm.auto import tqdm
 from typing import Type, Optional
-from targets_set import TargetsConstructor, TargetSet
+
+from .targets_set import TargetsConstructor, TargetSet
 
 
 def make_targets_table(target_constructors: list[Type[TargetsConstructor]],
