@@ -269,33 +269,33 @@ class RollSpread(FeaturesConstructor):
 
     @classmethod
     def get_features_list(cls) -> list[str]: return [
-        'roll_spread',
+        # 'roll_spread',
         'roll_percentage_spread'
     ]
 
     @classmethod
     def calculate(cls, series_dict: dict, scale: float=1e10) -> dict:
         is_trade = series_dict["is_trade"]
-        midquote = series_dict["midquote"][is_trade].iloc[1:]
-        prev_midquote = series_dict["midquote"].shift(1)[is_trade].iloc[1:]
+        eff_price = series_dict["eff_price"][is_trade].iloc[1:]
+        prev_eff_price = series_dict["eff_price"][is_trade].shift(1).iloc[1:]
 
-        delta_midquote_scaled = midquote - prev_midquote
-        scov = np.cov(delta_midquote_scaled[1:], delta_midquote_scaled.shift(1)[1:], ddof=1)[0,1]
-        r_spread = 2 * np.sqrt(-scov) if scov < 0 else -2 * np.sqrt(scov)
+        delta_price = eff_price - prev_eff_price
+        # scov = np.cov(delta_price[1:], delta_price.shift(1)[1:], ddof=1)[0,1]
+        # r_spread = 2 * np.sqrt(-scov) if scov < 0 else -2 * np.sqrt(scov)
 
-        if np.any(np.isclose(prev_midquote, 0)):
+        if np.any(np.isclose(prev_eff_price, 0)):
             return {
-                "roll_spread": r_spread * scale,
+                # "roll_spread": r_spread * scale,
                 "roll_percentage_spread": np.nan
             }
 
         # percentage spread estimate; normalized via scaling up by 100
-        returns = delta_midquote_scaled / prev_midquote
+        returns = delta_price / prev_eff_price
         scov_percent = np.cov(returns[1:], returns.shift(1)[1:], ddof=1)[0,1]
         r_percentage_spread = 200 * np.sqrt(-scov_percent) if scov_percent < 0 else -200 * np.sqrt(scov_percent)
 
         return {
-            "roll_spread": r_spread * scale,
+            # "roll_spread": r_spread * scale,
             "roll_percentage_spread": r_percentage_spread,
         }
 
@@ -374,18 +374,18 @@ class VPIN(FeaturesConstructor):
         return {"vpin": vpin}
 
 
-class OrderFlowImbalance(FeaturesConstructor):
-    "OFI, based on Cont, Kukanov and Stoikov (2014)."
+class OrderImbalance(FeaturesConstructor):
+    "Order/Trade Imbalance, based on Chordia and Subrahmanyam (2002 and 2004)."
 
     @classmethod
-    def get_features_list(cls) -> list[str]: return ['ofi']
+    def get_features_list(cls) -> list[str]: return ['order_imbalance']
 
     @classmethod
     def calculate(cls, series_dict: dict) -> dict:
         is_trade = series_dict["is_trade"]
         signed_volume = -series_dict["delta_base_vault"][is_trade]
         ofi = np.sum(signed_volume)
-        return {"ofi": ofi}
+        return {"order_imbalance": ofi}
 
 
 class EffectiveSpreadFeatures(FeaturesConstructor):
@@ -468,17 +468,17 @@ MICROSTRUCTURE_FEATURES = [
     RollSpread,
     AmihudIlliquidity,
     VPIN,
-    OrderFlowImbalance,
+    OrderImbalance,
     EffectiveSpreadFeatures,
     CorwinSchultzSpread,
 ]
 
 
-# # rolling quantiles of microstructure features
-# MICROSTRUCTURE_Q_FEATURES = [
-#     feature + "_rolling_q"
-#     for feature in DeltasFeatureSet(MICROSTRUCTURE_FEATURES).features_list
-# ]
+# rolling quantiles of microstructure features
+MICROSTRUCTURE_Q_FEATURES = [
+    feature + "_rolling_q"
+    for feature in DeltasFeatureSet(MICROSTRUCTURE_FEATURES).features_list
+]
 
 
 # static (categorical) features

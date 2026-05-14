@@ -12,7 +12,7 @@ def _is_signed(feature: str) -> bool:
     return (
         feature.startswith("roll") or
         feature.startswith("corwin") or
-        feature == "ofi"
+        feature.startswith("order")
     )
 
 

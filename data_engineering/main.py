@@ -50,14 +50,14 @@ def main():
         print(f"Constructed expanded dataset: {str(path_dataset_expanded)}")
         dataset_expanded_updated = True
 
-    # path_dataset_quantile = Path(f"data/{dataset_quantile_table_str}")
-    # if not path_dataset_quantile.is_file() or dataset_expanded_updated:
-    #     make_rolling_quantiles_features(
-    #         feature_constructors=MICROSTRUCTURE_FEATURES,
-    #         input_path=str(path_dataset_expanded),
-    #         out_path=str(path_dataset_quantile),
-    #     )
-    #     print(f"Constructed quantile dataset: {str(path_dataset_quantile)}")
+    path_dataset_quantile = Path(f"data/{dataset_quantile_table_str}")
+    if not path_dataset_quantile.is_file() or dataset_expanded_updated:
+        make_rolling_quantiles_features(
+            feature_constructors=MICROSTRUCTURE_FEATURES,
+            input_path=str(path_dataset_expanded),
+            out_path=str(path_dataset_quantile),
+        )
+        print(f"Constructed quantile dataset: {str(path_dataset_quantile)}")
 
 
 if __name__ == '__main__':
