@@ -23,5 +23,6 @@ With 32,426 token launches analyzed, I conducted an A/B test on model performanc
     ├── visuals                 # saved chart images
     ├── LICENSE
     ├── README.md
+    ├── Thesis.pdf              # thesis text (English)
     └── main.ipynb              # Jupyter notebook with the core study pipeline
 
