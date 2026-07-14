@@ -37,7 +37,8 @@ def _make_binned_ci_bands(sv: Any, n_bins: int, alpha: float) -> tuple[np.ndarra
 
 def make_shap_scatter_plot(model: Any, X_test: pd.DataFrame, features: list[str],
                            approximate: bool=False, n_cols: int=3,
-                           with_ci_bands: bool=True, n_bins: int=10, alpha: float=0.05):
+                           with_ci_bands: bool=True, n_bins: int=10, alpha: float=0.05,
+                           figsize: tuple[int, int]=(16, 9), dpi: int=250):
     explainer = shap.TreeExplainer(model)
     shap_values = explainer(X_test, approximate=approximate)
 
@@ -48,7 +49,7 @@ def make_shap_scatter_plot(model: Any, X_test: pd.DataFrame, features: list[str]
 
     # dimensions
     n_rows = len(features) // n_cols + 1
-    fig, ax = plt.subplots(n_rows, n_cols, figsize=(16, 9), dpi=250)
+    fig, ax = plt.subplots(n_rows, n_cols, figsize=figsize, dpi=dpi)
 
     for i, ax_i in enumerate(ax.flatten()):
         if i >= len(features):
